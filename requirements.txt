@@ -1,0 +1,17 @@
+# Web Interface
+streamlit
+
+# Core Logic
+langchain
+langchain-community
+langchain-openai
+langchain-chroma
+langchain-huggingface
+langchain-ollama
+
+# Document Loading & Processing
+pypdf
+tiktoken
+
+# Utilities
+python-dotenv
