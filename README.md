@@ -50,8 +50,7 @@ STUDENT-DOCUMENT-ASSISTANT/
 
 
 
-⚙️ Requirements & Installation
-
+## ⚙️ Requirements & Installation
 ​Ensure you have Python (version 3.9 up to 3.11) and the desktop daemon version of Ollama installed.
 
 ​1. Initialize Local LLM Model
@@ -62,8 +61,7 @@ ollama pull llama3.2:3b
 ​Install the required LangChain ecosystems, embedding tools, and vector database extensions through pip:
 pip install langchain-community langchain-text-splitters langchain-huggingface langchain-chroma langchain-ollama python-dotenv pypdf
 
-🏁 Execution Guide
-
+## 🏁 Execution Guide
 ​Step 1: Ingest Data Documents
 ​Place all target course files inside the docs/ directory folder, then compile them into mathematical vector maps:
 
@@ -76,8 +74,7 @@ Step 2: Interact via Terminal
 
 python rag_engine_withchatmemory.py
 
-💬 Sample Interaction Logs
-
+##💬 Sample Interaction Logs
 Initializing local Llama 3.2 via Ollama...
 Ask me questions! Type 'quit' to exit.
 
@@ -94,7 +91,7 @@ Found 5 relevant documents:
 Answer: It happens because cold deformation generates extra internal crystalline dislocations, creating an atomic gridlock that resists further deformation.
 
 
-🔧 Technical Hyperparameters & Customization
+## 🔧 Technical Hyperparameters & Customization
 
 ​chunk_size=800, chunk_overlap=150: Calibrated closely to support the 256 token limits imposed by the all-MiniLM-L6-v2 model embedding layers without experiencing content truncations.
 ​collection_metadata={"hnsw:space": "cosine"}: Configures ChromaDB to run multi-dimensional vector angular comparison instead of raw distance spacing metrics, yielding accurate semantic rankings regardless of document length variances.
