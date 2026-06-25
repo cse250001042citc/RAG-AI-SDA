@@ -1,120 +1,87 @@
-# Student Document Assistant 🎓📄
+Markdown
+# 📘 Student Document Assistant (SDA) - Advanced Hybrid RAG Engine
 
-The **Student Document Assistant** is a fully local, privacy-first **Retrieval-Augmented Generation (RAG)** system designed to help students interactively query, summarize, and understand textbooks, lecture notes, academic PDFs, and syllabi. 
-
-By leveraging state-of-the-art open-source Large Language Models (LLMs) and vector embedding pipelines locally on consumer-grade hardware, this project guarantees absolute data privacy with zero external API fees or dependencies.
-
----
-
-## 🚀 Key Architectural Features
-- **100% Local Processing:** Document parsing, embedding vectors, mathematical lookups, and response generation execute locally via Ollama and HuggingFace. No information leaves your machine.
-- **Contextual Query Reformulation:** Intelligently rewrites natural language follow-up chat inputs (e.g., *"Why does it happen?"*) into rich, standalone semantic search queries based on the ongoing conversation history.
-- **Factual Guardrails:** Hardcoded instruction injection completely eliminates model hallucinations, forcing the assistant to only answer using provided document context fragments.
+An advanced, production-grade Retrieval-Augmented Generation (RAG) academic application designed to ingest study materials (PDFs, TXT notes) and provide lightning-fast, context-verified, conversational answers using a hybrid lexical-semantic retrieval pipeline.
 
 ---
 
-## 🛠️ System Pipeline & Architecture
+## 🚀 Key Architectural Features (Evaluation Highlights)
 
-The project consists of an optimized two-stage pipeline architecture:
-
-### 1. Document Ingestion Pipeline (`Ingestion.py`)
-1. **Document Loading:** Leverages `PyPDFDirectoryLoader` to parse structural text elements out of any standard PDF document dropped in the `docs/` repository block.
-2. **Semantic Text Chunking:** Employs a `RecursiveCharacterTextSplitter` configured for a window matrix size of **800 characters** and a **150-character sliding overlap**. This ensures structural boundaries like paragraphs and chapters are kept topically coherent.
-3. **Vector Vectorization & Storage:** Feeds the character chunks into the local `all-MiniLM-L6-v2` transformer model to output 384-dimensional dense floating-point vector profiles. These profiles are written onto disk using a persistent `ChromaDB` matrix matching via the **Cosine Similarity Metric**.
-
-### 2. Conversational Context Engine (`rag_engine_withchatmemory.py`)
-1. **Memory Ingestion:** Appends continuous user questions and system responses using a LangChain memory-tracking array list (`HumanMessage` and `AIMessage`).
-2. **Contextual Processing:** The local LLM rewrites the user's newest prompt against past interaction transcripts to build clean standalone context vectors.
-3. **Information Retrieval:** Queries ChromaDB for the top **5 (`k=5`) most similar** text chunks matching the intent.
-4. **Response Generation:** Builds a structural system prompt wrapper containing the source documents, query text, and strict rules, executing a deterministic context resolution pass via a local **Llama 3.2 (3B)** model wrapper.
+*   **Dual-Engine Hybrid Retrieval:** Combines semantic concept searching (**ChromaDB Dense Vectors** using cosine distance metrics) with keyword-exact searching (**BM25 Sparse Lexical Store**). This completely eliminates the "vocabulary mismatch" problem common in standard vector-only pipelines.
+*   **Cross-Encoder Re-Ranking:** Implements a local, ultra-fast **FlashRank Cross-Encoder** model (`ms-marco-MiniLM-L-12-v2`). This scores, normalizes, and filters the raw retrieval pool down to the top 3 high-confidence context chunks, drastically minimizing LLM context window noise and maximizing accuracy.
+*   **Stateful Conversation Memory:** Uses a programmatic **Chat History Condensation** loop. If a user asks a follow-up question, the system queries the model to rewrite the input into an optimized, standalone searchable query before triggering document lookup.
+*   **Token Streaming Presentation:** Integrates **Live Token Streaming** via Streamlit UI wrappers and Groq LPU cloud acceleration endpoints (`llama-3.3-70b-versatile`), offering word-by-word streaming generation.
+*   **On-the-Fly Ingestion Pipeline:** Allows students to drag and drop new files (`.pdf`, `.txt`) directly via the web interface dashboard, automatically triggering text extraction, recursive splitting, and automatic database indexing.
 
 ---
 
-## 📦 Directory Structure
+## 🛠️ Tech Stack & System Requirements
 
-Set up your repository directory structure as follows before initializing execution steps:
+*   **Frontend Interface:** Streamlit (UI & State Handlers)
+*   **Orchestration Core:** LangChain Ecosytem (`langchain-core`, `langchain-community`, `langchain-groq`)
+*   **Local Embedding Weights:** HuggingFace Hub (`all-MiniLM-L6-v2`) via `local_files_only` execution
+*   **Vector Engine:** ChromaDB (HNSW index utilizing Cosine Space metrics)
+*   **Lexical Engine:** Rank-BM25 (Inverted Index Array serialized via Pickle)
+*   **Inference Model:** Llama-3.3-70b-Versatile via Groq Hardware Infrastructure
 
-```text
-STUDENT-DOCUMENT-ASSISTANT/
-│
-├── db/
-│   └── chroma_db/                 # Auto-generated during data ingestion
-├── docs/                          # DROP YOUR STUDY/COURSE PDFs HERE!
-│   ├── calculus_textbook.pdf
-│   └── chemistry_notes.pdf
-│
-├── Ingestion.py                   # Document ingestion pipeline
-├── rag_engine.py                  # Single-turn validation testing module
-├── rag_engine_withchatmemory.py   # Interactive multi-turn terminal app
-└── .env                           # Local environment configuration file
+---
 
+## 📦 Installation & Environment Setup
 
+### 1. Initialize Virtual Environment & Paths
+Clone or open your project folder in your command line terminal interface and execute:
+```bash
+# Activate your virtual environment
+.\myenv\Scripts\Activate.ps1
+2. Install Project Dependencies
+Sync your environment packages using the structured requirements manifesto:
 
-## ⚙️ Requirements & Installation
-​Ensure you have Python (version 3.9 up to 3.11) and the desktop daemon version of Ollama installed.
+Bash
+pip install -r requirements.txt
+3. Configure Secrets Configuration Configuration
+Create a file named .env in the root folder directory and securely add your developer authentication token key:
 
-​1. Initialize Local LLM Model
-​Download and install Ollama. Open your system terminal shell and download the micro LLM model footprint:
-ollama pull llama3.2:3b
+Plaintext
+GROQ_API_KEY=gsk_your_actual_copied_key_here
+(Ensure there are no spaces or trailing quotation marks around the token).
 
-2. Setup Dependencies
-​Install the required LangChain ecosystems, embedding tools, and vector database extensions through pip:
-pip install langchain-community langchain-text-splitters langchain-huggingface langchain-chroma langchain-ollama python-dotenv pypdf
+🎮 Subsystem Execution & Files Overview
+Your project repository is split into 4 optimized, standalone functional scripts:
 
-## 🏁 Execution Guide
-​Step 1: Ingest Data Documents
-​Place all target course files inside the docs/ directory folder, then compile them into mathematical vector maps:
+1. Data Processing Layer (ingestion.py)
+Parses raw documents from the local docs/ folder, splits string arrays recursively based on sentence structure, and provisions your matching dual index.
 
-python Ingestion.py
+Bash
+python ingestion.py
+2. Sandbox Verification Terminal (rag_engine.py)
+A command-line tester designed to run a single mock question through the full hybrid lookup loop, verify your FlashRank cross-encoder scores, and test out responses without loading the web engine wrapper.
 
-The script will log processing information to the terminal, print text chunk slices, and confirm database setup at db/chroma_db/.
+Bash
+python rag_engine.py
+3. Memory Loop Simulation Terminal (rag_engine_withchatmemory.py)
+A script that runs a persistent terminal command loop, tracking chat history and rewriting conversational context on the fly for continuous multi-turn interaction testing.
 
-Step 2: Interact via Terminal
-​Launch the contextualized question-and-answer terminal loop app:
-
+Bash
 python rag_engine_withchatmemory.py
+4. Enterprise Production Web Client (app.py)
+The primary entry point. Launches the interactive control panel, visualizes system health analytics, handles drag-and-drop ingestion, streams answers, and includes an expander to audit real-time pipeline confidence scores.
 
-##💬 Sample Interaction Logs
-Initializing local Llama 3.2 via Ollama...
-Ask me questions! Type 'quit' to exit.
+Bash
+streamlit run app.py
+📊 Evaluation Presentation Walkthrough
+When demonstrating this project to evaluators, highlight this unique architectural data flow:
 
-Your question: What is work hardening?
-Found 5 relevant documents:
-  Doc 1: Work hardening, also known as strain hardening, is...
-  Doc 2: The strengthening of a metal by plastic deformation...
-Answer: Work hardening is the structural strengthening of a metallic material caused by cold plastic deformation.
-
-Your question: Why does it happen?
-Searching for: Why does work hardening happen?
-Found 5 relevant documents:
-  Doc 1: This occurs due to dislocation movements within the crystal lattice...
-Answer: It happens because cold deformation generates extra internal crystalline dislocations, creating an atomic gridlock that resists further deformation.
-
-
-## 🔧 Technical Hyperparameters & Customization
-
-​chunk_size=800, chunk_overlap=150: Calibrated closely to support the 256 token limits imposed by the all-MiniLM-L6-v2 model embedding layers without experiencing content truncations.
-​collection_metadata={"hnsw:space": "cosine"}: Configures ChromaDB to run multi-dimensional vector angular comparison instead of raw distance spacing metrics, yielding accurate semantic rankings regardless of document length variances.
-​temperature=0: Set within ChatOllama to disable random word selection, establishing deterministic, non-creative, and factual answers for your study sessions.
-
-
-
-***
-
-### Summary of What the Provided PDF Document Covers:
-1. **Beautiful Clean Layout:** Follows a high-quality academic paper design scheme with structural side-borders and clean color-coded layouts tailored specifically for engineering and software development projects.
-2. **Clear Technical Explanations:** Explains how the pipeline reads files from `docs/`, cuts them down seamlessly through `RecursiveCharacterTextSplitter`, stores embeddings via HuggingFace's `all-MiniLM-L6-v2`, and generates data using `Ollama`.
-3. **Clear Code Snippets:** Captures instructions on setting up python environments, installing libraries, and pulling models via Ollama.
-4. **Chat Logic Explanation:** Documents how the history array list seamlessly formats follow-up inputs into independent search coordinates before approaching ChromaDB.
-
-
-
-
-
-
-☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆▪︎☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆
-yet to add about streamlit 
-●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●
-
-
-
+Plaintext
+[User Chat Question Input]
+           │
+           ▼
+[History Check Layer] ──► (If History Exists) ──► [Rewrite Standalone Query via LLM]
+           │
+           ├──► [ChromaDB Vector Index Search (k=3)] ──┐
+           │                                           ├──► [Combined Pool & Deduplication]
+           └──► [BM25 Inverted Lexical Search (k=3)] ──┘                  │
+                                                                          ▼
+[Groq Cloud Framework Layer] ◄── [Context Augmented Prompt] ◄── [FlashRank Cross-Encoder Filter (Top 3)]
+           │
+           ▼
+[Word-by-Word Live Token Streaming UI Output]
