@@ -1,25 +1,33 @@
+import pickle
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_ollama import ChatOllama
+from langchain_community.retrievers import BM25Retriever
+from langchain_community.document_compressors import FlashrankRerank
+from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-# from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 # Load environment variables
 load_dotenv()
 
 # Connect to your document database
 persistent_directory = "db/chroma_db"
-embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-db = Chroma(
+embedding_model = HuggingFaceEmbeddings(
+    model_name="all-MiniLM-L6-v2",
+    model_kwargs={"local_files_only": True}
+    )
+vector_db = Chroma(
     persist_directory=persistent_directory, 
     embedding_function=embedding_model,
     collection_metadata={"hnsw:space": "cosine"}  
     )
+with open("db/bm25_store.pkl", "rb") as f:
+    bm25_chunks = pickle.load(f)
+bm25_retriever = BM25Retriever.from_documents(bm25_chunks)
+bm25_retriever.k=3
 
 # Set up AI model
-print("Initializing local Llama 3.2 via Ollama...")
-model = ChatOllama(model="llama3.2:3b", temperature=0)
+model = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
 
 # Store our conversation as messages
 chat_history = []
@@ -42,31 +50,29 @@ def ask_question(user_question):
     else:
         search_question = user_question
     
-    # Step 2: Find relevant documents
-    retriever = db.as_retriever(search_kwargs={"k": 5})
-
-    # retriever = db.as_retriever(
-    #     search_type="similarity_score_threshold",
-    #     search_kwargs={
-    #         "k": 5,
-    #         "score_threshold": 0.3  # Only return chunks with cosine similarity ≥ 0.3
-    #     }
-    # )
-
-    docs = retriever.invoke(search_question)
+     # Step 2: Extract Hybrid Search Chunks
+    dense_hits = vector_db.as_retriever(search_kwargs={"k": 3}).invoke(search_question)
+    sparse_hits = bm25_retriever.invoke(search_question)
     
-    print(f"Found {len(docs)} relevant documents:")
-    for i, doc in enumerate(docs, 1):
-        # Show first 2 lines of each document
-        lines = doc.page_content.split('\n')[:2]
-        preview = '\n'.join(lines)
-        print(f"  Doc {i}: {preview}...")
-    
+    # Merge keeping document items unique
+    merged_pool = list({doc.page_content: doc for doc in (dense_hits + sparse_hits)}.values())
+
+    reranker = FlashrankRerank(model="ms-marco-MiniLM-L-12-v2", top_n=3)
+     # Step 3: Run Local FlashRank Filter 
+    refined_chunks = reranker.compress_documents(documents=merged_pool, query=search_question)
+
+    print(f"User Query: {search_question}")
+    # Display results
+    print("--- Context ---")
+    print("\n--- Top Normalized Context Chunks ---")
+    for idx, doc in enumerate(refined_chunks, 1):
+        print(f"Chunk {idx} [Relevance Score: {doc.metadata.get('relevance_score', 'N/A')}]:\n{doc.page_content[:150]}...\n")
+
     # Step 3: Create final prompt
     combined_input = f"""Based on the following documents, please answer this question: {user_question}
 
     Documents:
-    {chr(10).join([f"- {doc.page_content}" for doc in docs])}
+    {chr(10).join([f"- {doc.page_content}" for doc in refined_chunks])}
 
     Please provide a clear, helpful answer using only the information from these documents. If you can't find the answer in the documents, say "I don't have enough information to answer that question based on the provided documents."
     """
