@@ -49,7 +49,7 @@ RAG AI SDA/                     # Root Project Workspace Directory (Open this in
 ├── ingestion.py                # Pipeline Core: Document Parsing & Dual Index Compilation
 ├── rag_engine.py               # Evaluation Core: Baseline Single-Query Diagnostic Engine
 ├── rag_engine_withchatmemory.py # Sequential Simulation: Dynamic Chat Query Re-writer Loop
-├── streamlitrunapp.py          # Production Application: Real-time UI Presentation Client
+├── app.py                       # Production Application: Real-time UI Presentation Client
 └── requirements.txt            # Environment Packages Configuration Manifesto
 ```
 ---
