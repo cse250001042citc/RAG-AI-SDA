@@ -4,6 +4,13 @@ Markdown
 An advanced, production-grade Retrieval-Augmented Generation (RAG) academic application designed to ingest study materials (PDFs, TXT notes) and provide lightning-fast, context-verified, conversational answers using a hybrid lexical-semantic retrieval pipeline.
 
 ---
+## 🎯 Problem Statement
+
+Traditional keyword search systems fail to understand context, while standard vector-based RAG pipelines often suffer from "vocabulary mismatch" (failing to match exact technical phrases, codes, or formulas) and "LLM hallucinations." For students managing high volumes of complex lecture notes, textbook chapters, and academic papers, these inefficiencies lead to unreliable information retrieval and context window cluttering.
+
+**The Solution:** The Student Document Assistant addresses these limitations by introducing a **Dual-Engine Hybrid Retrieval Architecture with Cross-Encoder Re-ranking**. This approach ensures absolute keyword matching precision alongside deep conceptual understanding, filtering out non-relevant noise before sending data to the LLM to guarantee factual, hallucination-free academic support.
+
+---
 
 ## 🚀 Key Architectural Features (Evaluation Highlights)
 
@@ -26,6 +33,27 @@ An advanced, production-grade Retrieval-Augmented Generation (RAG) academic appl
 
 ---
 
+## 📐 Project Architecture
+
+The application pipeline is built around an advanced RAG pattern designed to maximize contextual relevance and execution efficiency:
+
+```text
+[User Chat Question Input]
+           │
+           ▼
+[History Check Layer] ──► (If History Exists) ──► [Rewrite Standalone Query via LLM]
+           │
+           ├──► [ChromaDB Vector Index Search (k=3)] ──┐
+           │                                           ├──► [Combined Pool & Deduplication]
+           └──► [BM25 Inverted Lexical Search (k=3)] ──┘                  │
+                                                                          ▼
+[Groq Cloud Framework Layer] ◄── [Context Augmented Prompt] ◄── [FlashRank Cross-Encoder Filter (Top 3)]
+           │
+           ▼
+[Word-by-Word Live Token Streaming UI Output]
+```
+---
+
 ## 📂 Project Directory Structure
 
 This is how your workspace layout looks inside the VS Code File Explorer sidebar. Ensure your working files and generated data directories mirror this arrangement exactly:
@@ -46,10 +74,11 @@ RAG AI SDA/                     # Root Project Workspace Directory (Open this in
 │   └── lecture_notes.txt       # Example Raw Study Reference Document
 │
 ├── .env                        # Secure Runtime Environment Secrets Tracker (Hidden)
+├── .gitignore                  # Git Version Control Exclusion Configuration File
 ├── ingestion.py                # Pipeline Core: Document Parsing & Dual Index Compilation
 ├── rag_engine.py               # Evaluation Core: Baseline Single-Query Diagnostic Engine
 ├── rag_engine_withchatmemory.py # Sequential Simulation: Dynamic Chat Query Re-writer Loop
-├── app.py                       # Production Application: Real-time UI Presentation Client
+├── streamlitrunapp.py          # Production Application: Real-time UI Presentation Client
 └── requirements.txt            # Environment Packages Configuration Manifesto
 ```
 ---
@@ -117,21 +146,41 @@ streamlit run app.py
 ```
 ---
 
-## 📊 Evaluation Presentation Walkthrough
-When demonstrating this project to evaluators, highlight this unique architectural data flow:
+## ⚠️ Security & Development Precautions
+To adhere to software engineering production standards and prevent exposing secure credentials or corrupting storage caches, the system implements the following governance rules:
+
+### 1. API Key Leak Prevention
+Never hardcode your GROQ_API_KEY string inside your Python scripts. The application utilizes python-dotenv to isolate keys into an unindexed .env configuration file, loading credentials dynamically into memory via system environmental variables.
+
+### 2. Git Version Control Exclusion (.gitignore)
+When pushing this repository to public version control platforms (e.g., GitHub, GitLab), you must create a .gitignore file in your root directory to ensure local system artifacts are never tracked or leaked.
+
+Create a .gitignore file and include these lines:
 
 ```Plaintext
-[User Chat Question Input]
-           │
-           ▼
-[History Check Layer] ──► (If History Exists) ──► [Rewrite Standalone Query via LLM]
-           │
-           ├──► [ChromaDB Vector Index Search (k=3)] ──┐
-           │                                           ├──► [Combined Pool & Deduplication]
-           └──► [BM25 Inverted Lexical Search (k=3)] ──┘                  │
-                                                                          ▼
-[Groq Cloud Framework Layer] ◄── [Context Augmented Prompt] ◄── [FlashRank Cross-Encoder Filter (Top 3)]
-           │
-           ▼
-[Word-by-Word Live Token Streaming UI Output]
+# Ignore Environment Configuration Secrets
+.env
+
+# Ignore Local Python Virtual Environment Packages
+myenv/
+__pycache__/
+*.pyc
+
+# Ignore Dynamic Local Database Stores (Prevents repository bloating)
+db/
+docs/
 ```
+---
+
+## 🔮 Future Scope
+### Multimodal Asset Ingestion (VLM Extension):
+Integrating Vision-Language Models (VLMs) to process charts, technical diagrams, mathematical tables, and handwritten lecture notes from textbook snapshots.
+
+### Graph-RAG Integration:
+Transitioning from a flat metadata index to a hierarchical Knowledge Graph (Neo4j) backend. This will allow the agent to map intersecting relational themes across different courses and academic fields.
+
+### Local LLM Deployment:
+Migrating the generation step from Cloud API services to fully local, hardware-quantized models (such as Llama-3-8B-Instruct via Ollama) to support completely offline operation.
+
+---
+
