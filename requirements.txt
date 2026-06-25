@@ -1,17 +1,21 @@
-# Web Interface
+# Web Interface Layer
 streamlit
 
-# Core Logic
+# Framework Core & Model Integrations
 langchain
+langchain-core
 langchain-community
-langchain-openai
+langchain-groq
+
+# Retrieval & Local Embeddings
 langchain-chroma
 langchain-huggingface
-langchain-ollama
+sentence-transformers
 
-# Document Loading & Processing
+# Sparse Retrieval & Re-ranking Engines
+rank-bm25
+flashrank
+
+# Document Data Parsing & Utilities
 pypdf
-tiktoken
-
-# Utilities
 python-dotenv
