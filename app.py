@@ -1,153 +1,198 @@
-import streamlit as st
 import os
-import tempfile
-import shutil
-from langchain_core.messages import HumanMessage, AIMessage
+import pickle
+import streamlit as st
+from dotenv import load_dotenv
 
-# --- BACKEND FUNCTIONS IMPORT ---
-# We use rag_engine_withchatmemory for core chat logic
-import rag_engine_withchatmemory as rag
-import ingestion as ing  # Fixed: Lowercase file name match
+# Import your core architecture modules
+from langchain_chroma import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.retrievers import BM25Retriever
+from langchain_community.document_compressors import FlashrankRerank
+from langchain_groq import ChatGroq
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
-# ==============================================================================
-# 1. OPTIMIZED RESOURCE CACHING (Crucial for Demos & Performance)
-# ==============================================================================
-@st.cache_resource
-def initialize_cached_resources():
-    """Load heavy machine learning models and database states exactly once."""
-    # Ensure directories exist
-    os.makedirs("docs", exist_ok=True)
-    os.makedirs("db/chroma_db", exist_ok=True)
-    
-    # Trigger original file variables to ensure embedding_model & db connections are ready
-    embedding = rag.embedding_model
-    vector_db = rag.db
-    llm_model = rag.model
-    
-    return embedding, vector_db, llm_model
+# Ingestion pipeline hooks
+from ingestion import load_documents, split_documents, create_vector_store
 
-# Run initialization
-embedding_model, db, model = initialize_cached_resources()
+# Load environment variables
+load_dotenv()
 
-# ==============================================================================
-# 2. STREAMLIT INTERFACE CONFIGURATION
-# ==============================================================================
+# --- STREAMLIT PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="Enterprise RAG Assistant", 
-    page_icon="🤖", 
+    page_title="Student Document Assistant",
+    page_icon="📘",
     layout="wide"
 )
 
-# Main layout header
-st.title("🤖 Intelligent Knowledge Base & RAG Chat")
-st.caption("Powered by Local Llama 3.2 (Ollama) & ChromaDB Vector Store")
-st.write("---")
+# Initialize Session State Variables to prevent page refresh wiping memory
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "db_initialized" not in st.session_state:
+    # Check if a database already exists on disk
+    st.session_state.db_initialized = os.path.exists("db/chroma_db") and os.path.exists("db/bm25_store.pkl")
 
-# ==============================================================================
-# 3. SIDEBAR: DOCUMENT INGESTION MANAGER
-# ==============================================================================
-with st.sidebar:
-    st.header("📂 Document Control Center")
-    st.write("Upload company files to dynamically update your RAG knowledge base.")
-    
-    # File uploader widget accepting multiple files
-    uploaded_files = st.file_uploader(
-        "Upload Source Documents", 
-        type=["pdf"], 
-        accept_multiple_files=True,
-        help="Currently supports PDF format optimization"
+# --- INITIALIZE PIPELINE INFRASTRUCTURE ---
+@st.cache_resource(show_spinner=False)
+def init_retrieval_components():
+    """Caches your model objects locally so they load instantly on button clicks."""
+    embedding_model = HuggingFaceEmbeddings(
+        model_name="all-MiniLM-L6-v2",
+        model_kwargs={"local_files_only": True} if os.path.exists("db/chroma_db") else {}
     )
     
-    if uploaded_files:
-        if st.button("🚀 Process & Embed Documents", use_container_width=True):
-            # Create a clean temporary workspace for ingestion execution
-            with tempfile.TemporaryDirectory() as temp_dir:
-                saved_count = 0
-                
-                # Save uploaded streams to disk so PyPDFDirectoryLoader can process them
-                for uploaded_file in uploaded_files:
-                    temp_file_path = os.path.join(temp_dir, uploaded_file.name)
-                    with open(temp_file_path, "wb") as f:
-                        f.write(uploaded_file.getbuffer())
-                    saved_count += 1
-                
-                # Execute Ingestion Pipeline
-                with st.spinner(f"Parsing and chunking {saved_count} document(s)..."):
-                    try:
-                        # Step 1: Read out documents from temp path
-                        documents = ing.load_documents(docs_path=temp_dir)
-                        
-                        # Step 2: Split into vector chunks
-                        chunks = ing.split_documents(documents)
-                        
-                        # Step 3: Append/Create vector store embeddings
-                        ing.create_vector_store(chunks, persist_directory="db/chroma_db")
-                        
-                        # Success metrics
-                        st.success(f"Successfully processed {saved_count} files!")
-                        st.toast("ChromaDB updated successfully!", icon="✅")
-                        
-                        # Clear Streamlit resource cache to refresh DB connection
-                        st.cache_resource.clear()
-                        
-                    except Exception as e:
-                        st.error(f"Ingestion Failed: {str(e)}")
-
-    st.write("---")
-    st.markdown("### 📊 System Status")
-    try:
-        # Fetch current record numbers inside ChromaDB safely for evaluators to view
-        doc_count = db._collection.count()
-        st.metric(label="Total Document Vectors Stored", value=doc_count)
-    except Exception:
-        st.metric(label="Total Document Vectors Stored", value="0 (Empty Database)")
-
-# ==============================================================================
-# 4. MAIN INTERFACE: SESSION STATE & CONVERSATIONAL MEMORY
-# ==============================================================================
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-# Clear chat history function
-if st.button("🗑️ Clear Conversation History"):
-    st.session_state.messages = []
-    rag.chat_history = []  # Wipe structural memory in backend script
-    st.rerun()
-
-# Display active past conversation streams
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-# ==============================================================================
-# 5. EXECUTE REAL-TIME USER INTERACTION
-# ==============================================================================
-if user_query := st.chat_input("Enter your query regarding your knowledge base..."):
+    vector_db = None
+    bm25_retriever = None
     
-    # 1. Display user intent instantly
-    with st.chat_message("user"):
-        st.markdown(user_query)
-    st.session_state.messages.append({"role": "user", "content": user_query})
+    if st.session_state.db_initialized:
+        vector_db = Chroma(
+            persist_directory="db/chroma_db", 
+            embedding_function=embedding_model,
+            collection_metadata={"hnsw:space": "cosine"}
+        )
+        with open("db/bm25_store.pkl", "rb") as f:
+            bm25_chunks = pickle.load(f)
+        bm25_retriever = BM25Retriever.from_documents(bm25_chunks)
+        bm25_retriever.k = 3
+        
+    reranker = FlashrankRerank(model="ms-marco-MiniLM-L-12-v2", top_n=3)
+    model = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+    
+    return embedding_model, vector_db, bm25_retriever, reranker, model
 
-    # 2. Process query with RAG Backend
-    with st.chat_message("assistant"):
-        with st.spinner("Analyzing context & generating response..."):
-            try:
-                # Syncing Streamlit history state into your backend chat history list
-                rag.chat_history = []
-                for msg in st.session_state.messages[:-1]: # exclude current user query
-                    if msg["role"] == "user":
-                        rag.chat_history.append(HumanMessage(content=msg["content"]))
-                    else:
-                        rag.chat_history.append(AIMessage(content=msg["content"]))
+# Unpack cached pipeline models
+embedding_model, vector_db, bm25_retriever, reranker, model = init_retrieval_components()
 
-                # Trigger the analytical logic pipeline inside rag_engine_withchatmemory
-                answer = rag.ask_question(user_query)
+# --- SIDEBAR INTERFACE & FILE INGESTION ---
+with st.sidebar:
+    st.title("⚙️ SDA Control Panel")
+    st.markdown("---")
+    
+    # 📊 Architecture Analytics Section (Great for Demos)
+    st.subheader("📊 System Health Metrics")
+    if st.session_state.db_initialized and vector_db is not None:
+        doc_count = vector_db._collection.count()
+        st.metric(label="ChromaDB Dense Records", value=f"{doc_count} Chunks")
+        st.metric(label="BM25 Lexical Store", value="Active (k=3)")
+        st.success("Subsystems Synchronized")
+    else:
+        st.warning("No Active Knowledge Base Found.")
+        
+    st.markdown("---")
+    
+    # 📂 Dynamic Document Upload Section
+    st.subheader("📂 Ingest Study Material")
+    uploaded_files = st.file_uploader(
+        "Upload Textbook PDFs or TXT notes:", 
+        type=["pdf", "txt"], 
+        accept_multiple_files=True
+    )
+    
+    if st.button("🚀 Run Ingestion Pipeline", use_container_width=True):
+        if not uploaded_files:
+            st.error("Please add files first!")
+        else:
+            with st.spinner("Executing Ingestion Layers..."):
+                # Save uploaded objects to local "docs" folder
+                os.makedirs("docs", exist_ok=True)
+                for f in uploaded_files:
+                    with open(os.path.join("docs", f.name), "wb") as buffer:
+                        buffer.write(f.getbuffer())
                 
-                # Show generated response contents on screen
-                st.markdown(answer)
-                st.session_state.messages.append({"role": "assistant", "content": answer})
+                # Execute backend ingestion stages sequentially
+                raw_docs = load_documents(docs_path="docs")
+                processed_chunks = split_documents(raw_docs)
+                create_vector_store(processed_chunks)
                 
-            except Exception as e:
-                error_msg = f"An execution error occurred inside the engine: {str(e)}"
-                st.error(error_msg)
+                # Clear cache and reset state flags
+                st.session_state.db_initialized = True
+                st.cache_resource.clear()
+                st.success("Indexing Complete! Reloading resources...")
+                st.rerun()
+
+    if st.button("🗑️ Clear Chat History", use_container_width=True):
+        st.session_state.chat_history = []
+        st.rerun()
+
+# --- MAIN UI PRESENTATION LAYER ---
+st.title("📘 STUDENT DOCUMENT ASSISTANT")
+st.caption("🚀 Advanced Hybrid Retrieval (Dense Vector + BM25 Lexical) with Local FlashRank Re-ranking")
+
+if not st.session_state.db_initialized:
+    st.info("👋 Welcome! To begin studying, drop your lecture documents or reference notes into the sidebar and run the ingestion pipeline.")
+else:
+    # Render past conversations onto screen
+    for message in st.session_state.chat_history:
+        role = "user" if isinstance(message, HumanMessage) else "assistant"
+        with st.chat_message(role):
+            st.markdown(message.content)
+
+    # Main Chat Submission Loop
+    if user_question := st.chat_input("Ask any question about your study materials:"):
+        
+        # Display user input immediately
+        with st.chat_message("user"):
+            st.markdown(user_question)
+            
+        # --- PHASE 1: CHAT HISTORY CONDENSATION ---
+        if st.session_state.chat_history:
+            history_prompt = [
+                SystemMessage(content="Given the chat history, rewrite the new question to be standalone and searchable. Just return the rewritten question.")
+            ] + st.session_state.chat_history + [HumanMessage(content=f"New question: {user_question}")]
+            
+            search_question = model.invoke(history_prompt).content.strip()
+        else:
+            search_question = user_question
+            
+        # --- PHASE 2: HYBRID RETRIEVAL ---
+        dense_hits = vector_db.as_retriever(search_kwargs={"k": 3}).invoke(search_question)
+        sparse_hits = bm25_retriever.invoke(search_question)
+        
+        # Merge tracking unique strings to deduplicate pool boundaries
+        merged_pool = list({doc.page_content: doc for doc in (dense_hits + sparse_hits)}.values())
+        
+        # --- PHASE 3: FLASHRANK RE-RANKING & SCORE NORMALIZATION ---
+        refined_chunks = reranker.compress_documents(documents=merged_pool, query=search_question)
+        
+        # --- PHASE 4: CONSTRUCT AUGMENTED CONTEXT PROMPT ---
+        context_payload = "\n".join([f"- {doc.page_content}" for doc in refined_chunks])
+        combined_input = f"""Based on the following documents, please answer this question: {user_question}
+
+        Documents:
+        {context_payload}
+
+        Please provide a clear, helpful answer using only the information from these documents. If you can't find the answer in the documents, say "I don't have enough information to answer that question based on the provided documents."
+        """
+        
+        messages = [
+            SystemMessage(content="You are a helpful academic assistant answering questions strictly based on the provided references."),
+        ] + st.session_state.chat_history + [HumanMessage(content=combined_input)]
+        
+        # --- PHASE 5: RUN CLOUD STREAMING COMPLETION ---
+        with st.chat_message("assistant"):
+            # Set up an empty UI block container for the typing animation effect
+            response_placeholder = st.empty()
+            full_response = ""
+            
+            # Request token streaming out of the Groq Engine
+            for chunk in model.stream(messages):
+                full_response += chunk.content
+                response_placeholder.markdown(full_response + "▌")
+            
+            # Print clean final text response
+            response_placeholder.markdown(full_response)
+            
+            # 💡 Show Pipeline Mechanics Toggle (Amazing addition for live grading)
+            with st.expander("🔍 See Live Pipeline Verification Metrics"):
+                st.markdown(f"**Standalone Search Optimization Output:** `{search_question}`")
+                st.markdown(f"**Merged Retrieval Pool Count:** `{len(merged_pool)} Chunks` -> **Normalized to Top:** `3 Chunks`")
+                for i, doc in enumerate(refined_chunks, 1):
+                    score = doc.metadata.get('relevance_score', 'N/A')
+                    # If score is numeric, clean it up to display as a float metric
+                    if isinstance(score, float):
+                        score = f"{score:.4f}"
+                    st.markdown(f"**Chunk {i} [FlashRank Confidence Score: {score}]:**")
+                    st.caption(f"Source: {doc.metadata.get('source', 'Unknown')} | Text preview: {doc.page_content[:200]}...")
+        
+        # Commit back to session memory state array
+        st.session_state.chat_history.append(HumanMessage(content=user_question))
+        st.session_state.chat_history.append(AIMessage(content=full_response))
