@@ -1,10 +1,8 @@
+import pickle
 import os
-from langchain_community.document_loaders import PyPDFDirectoryLoader
-# from langchain_community.document_loaders import TextLoader, DirectoryLoader
+from langchain_community.document_loaders import PyPDFDirectoryLoader,TextLoader,DirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-# from langchain_text_splitters import CharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
-# from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 from dotenv import load_dotenv
 
@@ -18,30 +16,32 @@ def load_documents(docs_path="docs"):
     if not os.path.exists(docs_path):
         raise FileNotFoundError(f"The directory {docs_path} does not exist. Please create it and add your company files.")
     
-    # # Load all .txt files from the docs directory
-    # loader = DirectoryLoader(
-    #     path=docs_path,
-    #     glob="*.txt",
-    #     loader_cls=TextLoader,
-    #     loader_kwargs={"encoding": "utf-8"}
-    # )
+    documents = []
+    # Load all .txt files from the docs directory
+    loader = DirectoryLoader(
+        path=docs_path,
+        glob="*.txt",
+        loader_cls=TextLoader,
+        loader_kwargs={"encoding": "utf-8"}
+    )
+    documents = loader.load()
 
     # Load all PDF files from the docs directory
-    loader = PyPDFDirectoryLoader(docs_path)
-    
-    documents = loader.load()
-    
+    pdf_loader = PyPDFDirectoryLoader(docs_path)
+    pdf_documents = pdf_loader.load()
+    documents.extend(pdf_documents)
+
     if len(documents) == 0:
         raise FileNotFoundError(f"No .pdf files found in {docs_path}. Please add your company documents.")
     
-   
-    for i, doc in enumerate(documents[:2]):  # Show first 2 documents
-        print(f"\nDocument {i+1}:")
-        print(f"  Source: {doc.metadata['source']}")
-        print(f"  Content length: {len(doc.page_content)} characters")
-        print(f"  Content preview: {doc.page_content[:100]}...")
-        print(f"  metadata: {doc.metadata}")
-
+    
+    # for i, doc in enumerate(documents[:6]):  # Show first 6 documents
+    #     print(f"\nDocument {i+1}:")
+    #     print(f"  Source: {doc.metadata['source']}")
+    #     print(f"  Content length: {len(doc.page_content)} characters")
+    #     print(f"  Content preview: {doc.page_content[:100]}...")
+    #     print(f"  metadata: {doc.metadata}")
+    print("=" * 50)
     return documents
 
 
@@ -59,22 +59,23 @@ def split_documents(documents, chunk_size=800, chunk_overlap=150):
     
     chunks = text_splitter.split_documents(documents)
     
-    if chunks:
-        for i, chunk in enumerate(chunks[:5]):
-            print(f"\n--- Chunk {i+1} ---")
-            print(f"Source: {chunk.metadata['source']}")
-            print(f"Length: {len(chunk.page_content)} characters")
-            print(f"Content:")
-            print(chunk.page_content)
-            print("-" * 50)
+    # if chunks:
+    #     for i, chunk in enumerate(chunks[:5]):
+    #         print(f"\n--- Chunk {i+1} ---")
+    #         print(f"Source: {chunk.metadata['source']}")
+    #         print(f"Length: {len(chunk.page_content)} characters")
+    #         print(f"Content:")
+    #         print(chunk.page_content)
+    #         print("-" * 50)
         
-        if len(chunks) > 5:
-            print(f"\n... and {len(chunks) - 5} more chunks")
+    #     if len(chunks) > 5:
+    #         print(f"\n... and {len(chunks) - 5} more chunks")
             
     print(f"Total chunks created: {len(chunks)}")
+    print("=" * 50)
     return chunks
 
-def create_vector_store(chunks, persist_directory="db/chroma_db"):
+def create_vector_store(chunks, persist_directory="db/chroma_db", bm25_path="db/bm25_store.pkl"):
     """Create and persist ChromaDB vector store using local HuggingFace embeddings"""
     print("Creating local embeddings and storing in ChromaDB...")
         
@@ -92,31 +93,19 @@ def create_vector_store(chunks, persist_directory="db/chroma_db"):
     print("--- Finished creating vector store ---")
     
     print(f"Vector store created and saved to {persist_directory}")
+
+    print("--- Serializing BM25 Text Store ---")
+    with open(bm25_path, "wb") as f:
+        pickle.dump(chunks, f)
+        
+    print("✅ Dual-indexing complete. Subsystems ready for Hybrid lookup.")
     return vectorstore
+
 
 def main():
     """Main ingestion pipeline"""
     # print("MAin function")
     # print("=== RAG Document Ingestion Pipeline ===\n")
-    
-    # # Define paths
-    # docs_path = "docs"
-    # persistent_directory = "db/chroma_db"
-    
-    # # Check if vector store already exists
-    # if os.path.exists(persistent_directory):
-    #     print("✅ Vector store already exists. No need to re-process documents.")
-        
-    #     embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    #     vectorstore = Chroma(
-    #         persist_directory=persistent_directory,
-    #         embedding_function=embedding_model, 
-    #         collection_metadata={"hnsw:space": "cosine"}
-    #     )
-    #     print(f"Loaded existing vector store with {vectorstore._collection.count()} documents")
-    #     return vectorstore
-    
-    # print("Persistent directory does not exist. Initializing vector store...\n")
     
     # Step 1: Load documents
     documents = load_documents(docs_path="docs")  
@@ -124,7 +113,7 @@ def main():
 #     # Step 2: Split into chunks
     chunks = split_documents(documents)
     
-#     # # Step 3: Create vector store
+# #     # # Step 3: Create vector store
     vectorstore =create_vector_store(chunks)
     
     # print("\n✅ Ingestion complete! Your documents are now ready for RAG queries.")
@@ -132,4 +121,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
 
